@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contentful Import</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Contentful Import/Export</h1>
+        <div id="statusMessage" class="status-message"></div>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="space">Contentful Space</label>
+                <select id="space" name="space">
+                    <option value="">Select a Space</option>
+                    <!-- Populate with API data -->
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="environment">Contentful Environment</label>
+                <select id="environment" name="environment" disabled>
+                    <option value="">Select an Environment</option>
+                    <!-- Populate based on space selection -->
+                </select>
+            </div>
+              <div class="form-group">
+                <label for="action">Action</label>
+                <select id="action" name="action">
+                    <option value="">Select an Action</option>
+                     <option value="Import">Import</option>
+                     <option value="Export">Export</option>
+                </select>
+            </div>
+            <div class="form-group" id="localeGroup">
+                <label for="locale">Locale</label>
+                <select id="locale" name="locale" disabled>
+                    <option value="">Select a Locale</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="file">Upload File</label>
+                <input type="file" id="file" name="file" accept=".txt,.json">
+                <div id="filePreview" class="file-preview" aria-live="polite"></div>
+            </div>
+            <div id="downloadLink" class="download-link"></div>
+            <br>
+            <button type="submit" class="btn" id="submitBtn">Upload</button>
+        </form>
+    </div>
+    <script>
+        const spaceSelect = document.getElementById('space');
+        const environmentSelect = document.getElementById('environment');
+        const uploadForm = document.getElementById('uploadForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const statusMessage = document.getElementById('statusMessage');
+        const fileInput = document.getElementById('file');
+        const filePreview = document.getElementById('filePreview');
+        const downloadLink = document.getElementById('downloadLink');
+        const localeSelect = document.getElementById('locale');
+        const localeGroup = document.getElementById('localeGroup');
+        const actionSelect = document.getElementById('action');
+
+        setLocaleVisibility(false);
+
+        // Fetch spaces on page load
+        fetch('/api/spaces')
+            .then(response => response.json())
+            .then(spaces => {
+                spaces.forEach(space => {
+                    const option = document.createElement('option');
+                    option.value = space.id;
+                    option.textContent = space.name;
+                    spaceSelect.appendChild(option);
+                });
+            });
+
+        spaceSelect.addEventListener('change', () => {
+            const selectedSpace = spaceSelect.value;
+            environmentSelect.innerHTML = '<option value="">Select an Environment</option>';
+            environmentSelect.disabled = true;
+            resetLocaleField();
+
+            if (selectedSpace) {
+                fetch(`/api/spaces/${selectedSpace}/environments`)
+                    .then(response => response.json())
+                    .then(environments => {
+                        if (environments.length > 0) {
+                            environments.forEach(env => {
+                                const option = document.createElement('option');
+                                option.value = env.id;
+                                option.textContent = env.name;
+                                environmentSelect.appendChild(option);
+                            });
+                            environmentSelect.disabled = false;
+                        }
+                    });
+            }
+        });
+
+        environmentSelect.addEventListener('change', () => {
+            const selectedSpace = spaceSelect.value;
+            const selectedEnvironment = environmentSelect.value;
+            resetLocaleField();
+
+            if (selectedSpace && selectedEnvironment && actionSelect.value === 'Import') {
+                fetchLocales(selectedSpace, selectedEnvironment);
+            }
+        });
+
+        actionSelect.addEventListener('change', () => {
+            if (actionSelect.value === 'Import') {
+                setLocaleVisibility(true);
+                if (spaceSelect.value && environmentSelect.value) {
+                    fetchLocales(spaceSelect.value, environmentSelect.value);
+                }
+            } else {
+                setLocaleVisibility(false);
+                resetLocaleField();
+            }
+        });
+
+        // Handle async form submission
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Clear previous status
+            statusMessage.textContent = '';
+            statusMessage.className = 'status-message';
+            
+            // Validate form
+            const space = document.getElementById('space').value;
+            const environment = document.getElementById('environment').value;
+            const action = document.getElementById('action').value;
+            const locale = document.getElementById('locale').value;
+            const file = document.getElementById('file').files[0];
+            
+            if (!space || !environment || !action || !file) {
+                showStatus('Please fill in all fields and select a file', 'error');
+                return;
+            }
+
+            if (action === 'Import' && !locale) {
+                showStatus('Please select a locale for import.', 'error');
+                return;
+            }
+
+            const endpoint = action === 'Export' ? '/api/export'
+                : action === 'Import' ? '/api/import'
+                : '';
+
+            if (!endpoint) {
+                showStatus('Please select a valid action', 'error');
+                return;
+            }
+            
+            // Disable submit button
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Uploading...';
+            
+            try {
+                // Create FormData
+                const formData = new FormData();
+                formData.append('space', space);
+                formData.append('environment', environment);
+                if (locale) {
+                    formData.append('locale', locale);
+                }
+                formData.append('file', file);
+                
+                // Submit via API
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    if (result.filePath) {
+                        showStatus(
+                            `Success! ${result.message}\nExport file created at: ${result.filePath}`,
+                            'success'
+                        );
+                        renderDownload(result.filePath);
+                    } else if (result.importSummary) {
+                        const summary = result.importSummary;
+                        showStatus(
+                            `Success! ${result.message}\n` +
+                            `Entries Processed: ${summary.entriesProcessed}\n` +
+                            `Entries Updated: ${summary.entriesUpdated}\n` +
+                            `Strings Replaced: ${summary.replacements}`,
+                            'success'
+                        );
+                        clearDownload();
+                    } else if (result.data) {
+                        showStatus(
+                            `Success! ${result.message}\n` +
+                            `Entries: ${result.data.entriesProcessed}, ` +
+                            `Assets: ${result.data.assetsProcessed}, ` +
+                            `Content Types: ${result.data.contentTypesProcessed}\n` +
+                            `Duration: ${result.data.duration}\n` +
+                            `File saved to: ${result.file?.savedPath ?? 'n/a'}`,
+                            'success'
+                        );
+                        clearDownload();
+                    } else {
+                        showStatus(`Success! ${result.message}`, 'success');
+                        clearDownload();
+                    }
+                    uploadForm.reset();
+                    environmentSelect.disabled = true;
+                    localeSelect.disabled = true;
+                    localeSelect.innerHTML = '<option value="">Select a Locale</option>';
+                    setLocaleVisibility(false);
+                    clearPreview();
+                } else {
+                    showStatus(`Error: ${result.error || 'Upload failed'}`, 'error');
+                    clearDownload();
+                }
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Upload';
+            }
+        });
+        
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = `status-message ${type}`;
+            statusMessage.style.whiteSpace = 'pre-line';
+        }
+
+        function resetLocaleField() {
+            localeSelect.innerHTML = '<option value="">Select a Locale</option>';
+            localeSelect.disabled = true;
+            localeSelect.value = '';
+        }
+
+        function setLocaleVisibility(show) {
+            localeGroup.style.display = show ? 'block' : 'none';
+        }
+
+        function fetchLocales(spaceId, environmentId) {
+            fetch(`/api/spaces/${spaceId}/environments/${environmentId}/locales`)
+                .then(response => response.json())
+                .then(locales => {
+                    if (!Array.isArray(locales) || locales.length === 0) {
+                        showStatus('No locales available for this environment.', 'error');
+                        return;
+                    }
+                    resetLocaleField();
+                    locales.forEach(locale => {
+                        const option = document.createElement('option');
+                        option.value = locale.code;
+                        option.textContent = `${locale.name} (${locale.code})${locale.default ? ' - Default' : ''}`;
+                        localeSelect.appendChild(option);
+                    });
+                    const defaultLocale = locales.find(locale => locale.default)?.code;
+                    localeSelect.value = defaultLocale || locales[0].code;
+                    localeSelect.disabled = false;
+                })
+                .catch(() => {
+                    showStatus('Failed to fetch locales for the selected environment.', 'error');
+                });
+        }
+
+        // Preview first few IDs from selected .txt file
+        fileInput.addEventListener('change', () => {
+            clearPreview();
+            const file = fileInput.files[0];
+            if (!file) return;
+            const ext = file.name.split('.').pop()?.toLowerCase();
+            if (ext === 'txt') {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const content = String(reader.result || '');
+                    const ids = content
+                        .split(/\r?\n/)
+                        .map(s => s.trim())
+                        .filter(Boolean);
+                    const sample = ids.slice(0, 5);
+                    const moreCount = Math.max(ids.length - sample.length, 0);
+                    filePreview.innerHTML = `
+                        <div class="preview-header">Detected ${ids.length} entry IDs</div>
+                        <ul class="preview-list">${sample.map(id => `<li>${id}</li>`).join('')}</ul>
+                        ${moreCount ? `<div class="preview-footer">…and ${moreCount} more</div>` : ''}
+                    `;
+                };
+                reader.onerror = () => {
+                    filePreview.innerHTML = '<div class="preview-error">Failed to read file.</div>';
+                };
+                reader.readAsText(file);
+            } else if (ext === 'json') {
+                filePreview.innerHTML = '<div class="preview-hint">JSON file detected. Preview is available for .txt export files only.</div>';
+            } else {
+                filePreview.innerHTML = '<div class="preview-error">Unsupported file type. Please select a .txt or .json file.</div>';
+            }
+        });
+
+        function clearPreview() {
+            filePreview.innerHTML = '';
+        }
+
+        function renderDownload(path) {
+            const href = `/api/download?path=${encodeURIComponent(path)}`;
+            downloadLink.innerHTML = `<a class="btn" href="${href}">Download Export</a>`;
+        }
+
+        function clearDownload() {
+            downloadLink.innerHTML = '';
+        }
+    </script>
+</body>
+</html>
