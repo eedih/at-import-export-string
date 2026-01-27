@@ -18,6 +18,12 @@
                     <!-- Populate with API data -->
                 </select>
             </div>
+            <div class="form-group inline-group">
+                <label for="aliasFilter">
+                    <input type="checkbox" id="aliasFilter" name="aliasFilter" checked>
+                    Show only environments with aliases
+                </label>
+            </div>
             <div class="form-group">
                 <label for="environment">Contentful Environment</label>
                 <select id="environment" name="environment" disabled>
@@ -61,6 +67,8 @@
         const localeSelect = document.getElementById('locale');
         const localeGroup = document.getElementById('localeGroup');
         const actionSelect = document.getElementById('action');
+        const aliasFilterCheckbox = document.getElementById('aliasFilter');
+        let cachedEnvironments = [];
 
         setLocaleVisibility(false);
 
@@ -81,20 +89,15 @@
             environmentSelect.innerHTML = '<option value="">Select an Environment</option>';
             environmentSelect.disabled = true;
             resetLocaleField();
+            cachedEnvironments = [];
+            renderEnvironmentOptions(false);
 
             if (selectedSpace) {
                 fetch(`/api/spaces/${selectedSpace}/environments`)
                     .then(response => response.json())
                     .then(environments => {
-                        if (environments.length > 0) {
-                            environments.forEach(env => {
-                                const option = document.createElement('option');
-                                option.value = env.id;
-                                option.textContent = env.name;
-                                environmentSelect.appendChild(option);
-                            });
-                            environmentSelect.disabled = false;
-                        }
+                        cachedEnvironments = Array.isArray(environments) ? environments : [];
+                        renderEnvironmentOptions(false);
                     });
             }
         });
@@ -119,6 +122,12 @@
                 setLocaleVisibility(false);
                 resetLocaleField();
             }
+        });
+
+        aliasFilterCheckbox.addEventListener('change', () => {
+            renderEnvironmentOptions(true);
+            resetLocaleField();
+            environmentSelect.value = '';
         });
 
         // Handle async form submission
@@ -231,6 +240,37 @@
             statusMessage.textContent = message;
             statusMessage.className = `status-message ${type}`;
             statusMessage.style.whiteSpace = 'pre-line';
+        }
+
+        function renderEnvironmentOptions(preserveSelection = true) {
+            const previousValue = preserveSelection ? environmentSelect.value : '';
+            environmentSelect.innerHTML = '<option value="">Select an Environment</option>';
+            const filtered = aliasFilterCheckbox.checked
+                ? cachedEnvironments.filter(env => env.hasAlias)
+                : cachedEnvironments.slice();
+
+            if (!filtered.length) {
+                environmentSelect.disabled = true;
+                if (cachedEnvironments.length && aliasFilterCheckbox.checked) {
+                    showStatus('No environments with aliases found. Uncheck the filter to view all environments.', 'error');
+                }
+                return;
+            }
+
+            filtered.forEach(env => {
+                const option = document.createElement('option');
+                option.value = env.id;
+                option.textContent = env.aliases.length ? `${env.aliases.join(', ')} - ${env.name}` : env.name;
+                environmentSelect.appendChild(option);
+            });
+
+            if (previousValue && filtered.some(env => env.id === previousValue)) {
+                environmentSelect.value = previousValue;
+            } else {
+                environmentSelect.value = '';
+            }
+
+            environmentSelect.disabled = false;
         }
 
         function resetLocaleField() {

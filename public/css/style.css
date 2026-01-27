@@ -141,3 +141,10 @@ select:disabled {
     width: auto;
     padding: 12px 24px;
 }
+
+.inline-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+}

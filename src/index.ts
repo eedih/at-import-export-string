@@ -124,9 +124,15 @@ app.get('/api/spaces/:spaceId/environments', async (req, res) => {
         });
 
         const response = environments.items.map(env => {
-            const envAliases = aliasMap.get(env.sys.id);
-            const name = envAliases ? `${env.name} (${envAliases.join(', ')})` : env.name;
-            return { id: env.sys.id, name };
+            const envAliases = aliasMap.get(env.sys.id) || [];
+            //const name = envAliases.length ? `${env.name} (${envAliases.join(', ')})` : env.name;
+            const name =  env.name;
+            return {
+                id: env.sys.id,
+                name,
+                hasAlias: envAliases.length > 0,
+                aliases: envAliases
+            };
         });
 
         res.json(response);
