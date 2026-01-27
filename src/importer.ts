@@ -125,13 +125,13 @@ export async function importStrings(
             if (!activityJSON) {
                 continue;
             }
-
-            const { changed, replacements } = applyTranslations(activityJSON, translations);
+            var translatedActivityJSON = JSON.parse(JSON.stringify(activityJSON));
+            const { changed, replacements } = applyTranslations(translatedActivityJSON, translations);
             if (!changed && replacements === 0) {
                 continue;
             }
 
-            entry.fields.activityJSON[locale] = activityJSON;
+            entry.fields.activityJSON[locale] = translatedActivityJSON;
             await entry.update();
             summary.entriesUpdated += 1;
             summary.replacements += replacements;

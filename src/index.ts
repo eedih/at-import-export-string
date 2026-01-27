@@ -221,45 +221,61 @@ app.post('/api/export', upload.single('file'), async (req, res) => {
 });
 
 // Import API
-app.post('/api/import', upload.single('file'), async (req, res) => {
+app.post('/api/import', upload.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'activityIds', maxCount: 1 }
+]), async (req, res) => {
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+    const mainFile = files?.file?.[0];
+    const activityIdsFile = files?.activityIds?.[0];
+
+    const cleanup = () => {
+        if (mainFile) removeFile(mainFile.path);
+        if (activityIdsFile) removeFile(activityIdsFile.path);
+    };
+
     try {
-        if (!req.file) {
+        if (!mainFile) {
+            cleanup();
             return res.status(400).json({ success: false, error: 'No file uploaded' });
         }
 
         const { space, environment, locale: localeInput } = req.body;
         if (!space || !environment) {
-            removeFile(req.file.path);
+            cleanup();
             return res.status(400).json({
                 success: false,
                 error: 'Missing required fields: space or environment'
             });
         }
 
-        console.log(`File saved to: ${req.file.path}`);
+        console.log(`File saved to: ${mainFile.path}`);
+        if (activityIdsFile) {
+            console.log(`Activity IDs file saved to: ${activityIdsFile.path}`);
+        }
         console.log(`Space: ${space}, Environment: ${environment}, Action: Import`);
-        console.log(`File size: ${req.file.size} bytes`);
+        console.log(`File size: ${mainFile.size} bytes`);
 
         const locale = typeof localeInput === 'string' && localeInput.trim().length > 0
             ? localeInput.trim()
             : 'en-US';
 
-        if (path.extname(req.file.originalname).toLowerCase() !== '.json') {
-            removeFile(req.file.path);
+        if (path.extname(mainFile.originalname).toLowerCase() !== '.json') {
+            cleanup();
             return res.status(400).json({
                 success: false,
                 error: 'Import requires a .json file containing translations'
             });
         }
 
-        const fileContent = fs.readFileSync(req.file.path, 'utf-8');
+        const fileContent = fs.readFileSync(mainFile.path, 'utf-8');
 
         let parsedData: unknown;
         try {
             parsedData = JSON.parse(fileContent);
         } catch (parseError) {
             console.error('Import parse error:', parseError);
-            removeFile(req.file.path);
+            cleanup();
             return res.status(400).json({
                 success: false,
                 error: 'Invalid JSON file uploaded for import'
@@ -267,7 +283,7 @@ app.post('/api/import', upload.single('file'), async (req, res) => {
         }
 
         if (!parsedData || typeof parsedData !== 'object' || Array.isArray(parsedData)) {
-            removeFile(req.file.path);
+            cleanup();
             return res.status(400).json({
                 success: false,
                 error: 'Import JSON must be an object of translations'
@@ -280,9 +296,23 @@ app.post('/api/import', upload.single('file'), async (req, res) => {
             translationsPayload = dataObject.translations as Record<string, unknown>;
         }
 
-        let entryIdsFromFile: string[] | undefined;
-        if (Array.isArray(dataObject.entryIds)) {
-            entryIdsFromFile = dataObject.entryIds
+        let entryIds: string[] | undefined;
+    
+        if (activityIdsFile) {
+            if (path.extname(activityIdsFile.originalname).toLowerCase() !== '.txt') {
+                cleanup();
+                return res.status(400).json({
+                    success: false,
+                    error: 'Activity IDs file must be a .txt file'
+                });
+            }
+            const activityIdsContent = fs.readFileSync(activityIdsFile.path, 'utf-8');
+            entryIds = activityIdsContent
+                .split(/\r?\n/)
+                .map(id => id.trim())
+                .filter(Boolean);
+        } else if (Array.isArray(dataObject.entryIds)) {
+            entryIds = dataObject.entryIds
                 .map(value => String(value).trim())
                 .filter(Boolean);
         }
@@ -293,10 +323,11 @@ app.post('/api/import', upload.single('file'), async (req, res) => {
                 space,
                 environment,
                 translationsPayload,
-                entryIdsFromFile,
+                entryIds,
                 locale
             );
 
+            cleanup();
             return res.json({
                 success: true,
                 message: `Import completed successfully for locale ${locale}`,
@@ -305,11 +336,14 @@ app.post('/api/import', upload.single('file'), async (req, res) => {
             });
         } catch (error) {
             console.error('Import error:', error);
+            cleanup();
             return res.status(500).json({ success: false, error: 'Import failed' });
         }
     } catch (error) {
         console.error('Import request error:', error);
-        removeFile(req.file?.path);
+        const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+        if (files?.file?.[0]) removeFile(files.file[0].path);
+        if (files?.activityIds?.[0]) removeFile(files.activityIds[0].path);
         return res.status(500).json({ success: false, error: 'Import failed' });
     }
 });

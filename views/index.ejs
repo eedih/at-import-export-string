@@ -50,6 +50,10 @@
                 <input type="file" id="file" name="file" accept=".txt,.json">
                 <div id="filePreview" class="file-preview" aria-live="polite"></div>
             </div>
+            <div class="form-group" id="activityIdsGroup" style="display: none;">
+                <label for="activityIds">Activity Ids (optional)</label>
+                <input type="file" id="activityIds" name="activityIds" accept=".txt">
+            </div>
             <div id="downloadLink" class="download-link"></div>
             <br>
             <button type="submit" class="btn" id="submitBtn">Upload</button>
@@ -68,6 +72,7 @@
         const localeGroup = document.getElementById('localeGroup');
         const actionSelect = document.getElementById('action');
         const aliasFilterCheckbox = document.getElementById('aliasFilter');
+        const activityIdsGroup = document.getElementById('activityIdsGroup');
         let cachedEnvironments = [];
 
         setLocaleVisibility(false);
@@ -113,13 +118,15 @@
         });
 
         actionSelect.addEventListener('change', () => {
-            if (actionSelect.value === 'Import') {
-                setLocaleVisibility(true);
+            const isImport = actionSelect.value === 'Import';
+            setLocaleVisibility(isImport);
+            activityIdsGroup.style.display = isImport ? 'block' : 'none';
+
+            if (isImport) {
                 if (spaceSelect.value && environmentSelect.value) {
                     fetchLocales(spaceSelect.value, environmentSelect.value);
                 }
             } else {
-                setLocaleVisibility(false);
                 resetLocaleField();
             }
         });
@@ -178,6 +185,14 @@
                 }
                 formData.append('file', file);
                 
+                // Add optional activity IDs file for import
+                if (action === 'Import') {
+                    const activityIdsFile = document.getElementById('activityIds').files[0];
+                    if (activityIdsFile) {
+                        formData.append('activityIds', activityIdsFile);
+                    }
+                }
+                
                 // Submit via API
                 const response = await fetch(endpoint, {
                     method: 'POST',
@@ -223,6 +238,7 @@
                     localeSelect.disabled = true;
                     localeSelect.innerHTML = '<option value="">Select a Locale</option>';
                     setLocaleVisibility(false);
+                    activityIdsGroup.style.display = 'none';
                     clearPreview();
                 } else {
                     showStatus(`Error: ${result.error || 'Upload failed'}`, 'error');
