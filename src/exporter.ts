@@ -95,6 +95,7 @@ export async function exportStrings(
     spaceId: string,
     environmentId: string,
     outputDir: string,
+    defaultLocale: string,  
     entryIds?: string[]
 ): Promise<string> {
     translate = {}; // Reset for each export
@@ -111,7 +112,7 @@ export async function exportStrings(
 
             const entries = await getAllEntriesOfType(space, environmentId, 'healthJourney_toolboxActivity', batch);
             entries.forEach(entry => {
-                const val = entry.fields.activityJSON?.['en-US'];
+                const val = entry.fields.activityJSON?.[defaultLocale];
                 if (val !== undefined) {
                     collectStrings(val);
                 }
@@ -124,7 +125,7 @@ export async function exportStrings(
         console.log(`No entry IDs provided. Fetching all entries for content type 'healthJourney_toolboxActivity'.`);
         const entries = await getAllEntriesOfType(space, environmentId, 'healthJourney_toolboxActivity');
         entries.forEach(entry => {
-            const val = entry.fields.activityJSON?.['en-US'];
+            const val = entry.fields.activityJSON?.[defaultLocale];
             if (val !== undefined) {
                 collectStrings(val);
             }
@@ -132,7 +133,7 @@ export async function exportStrings(
     }
 
 
-    const outputFileName = `export-${spaceId}-${environmentId}-${new Date().toISOString()}.json`;
+    const outputFileName = `export-${spaceId}-${environmentId}-${defaultLocale}-${new Date().toISOString()}.json`;
     const outputFilePath = path.join(outputDir, outputFileName);
     fs.writeFileSync(outputFilePath, JSON.stringify(translate, null, 2));
 

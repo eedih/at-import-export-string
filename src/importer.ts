@@ -100,8 +100,9 @@ export async function importStrings(
     spaceId: string,
     environmentId: string,
     rawTranslations: Record<string, unknown>,
+    locale: string,
+    defaultLocale: string,
     entryIds?: string[],
-    locale: string = 'en-US'
 ): Promise<ImportSummary> {
     const translations = sanitizeTranslations(rawTranslations);
     const space = await client.getSpace(spaceId);
@@ -121,7 +122,7 @@ export async function importStrings(
     const processEntries = async (entries: any[], locale: string) => {
         for (const entry of entries) {
             summary.entriesProcessed += 1;
-            const activityJSON = entry.fields.activityJSON?.['en-US'];
+            const activityJSON = entry.fields.activityJSON?.[defaultLocale];
             if (!activityJSON) {
                 continue;
             }

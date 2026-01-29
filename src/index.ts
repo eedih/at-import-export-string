@@ -195,12 +195,26 @@ app.post('/api/export', upload.single('file'), async (req, res) => {
             .map((id: string) => id.trim())
             .filter(Boolean);
 
+        const spaceObj = await client.getSpace(space);
+        const env = await spaceObj.getEnvironment(environment);
+        const locales = await env.getLocales();
+        const defaultLocale = locales.items.find(l => l.default)?.code;
+        
+        if (!defaultLocale) {
+            removeFile(req.file.path);
+            return res.status(500).json({
+                success: false,
+                error: 'No default locale found in environment'
+            });
+        }
+
         try {
             const exportFilePath = await exportStrings(
                 client,
                 space,
                 environment,
                 tmpDir,
+                defaultLocale,
                 entryIds
             );
 
@@ -256,9 +270,23 @@ app.post('/api/import', upload.fields([
         console.log(`Space: ${space}, Environment: ${environment}, Action: Import`);
         console.log(`File size: ${mainFile.size} bytes`);
 
+     
+        const spaceObj = await client.getSpace(space);
+        const env = await spaceObj.getEnvironment(environment);
+        const locales = await env.getLocales();
+        const defaultLocale = locales.items.find(l => l.default)?.code;
+        
+        if (!defaultLocale) {
+            cleanup();
+            return res.status(500).json({
+                success: false,
+                error: 'No default locale found in environment'
+            });
+        }
+        
         const locale = typeof localeInput === 'string' && localeInput.trim().length > 0
             ? localeInput.trim()
-            : 'en-US';
+            : defaultLocale;
 
         if (path.extname(mainFile.originalname).toLowerCase() !== '.json') {
             cleanup();
@@ -323,8 +351,9 @@ app.post('/api/import', upload.fields([
                 space,
                 environment,
                 translationsPayload,
-                entryIds,
-                locale
+                locale,
+                defaultLocale,
+                entryIds
             );
 
             cleanup();
