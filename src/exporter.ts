@@ -133,7 +133,7 @@ export async function exportStrings(
     }
 
 
-    const outputFileName = `export-${spaceId}-${environmentId}-${defaultLocale}-${new Date().toISOString()}.json`;
+    const outputFileName = `export-${space.name}-${environmentId}-${defaultLocale}-${new Date().toISOString()}.json`;
     const outputFilePath = path.join(outputDir, outputFileName);
     fs.writeFileSync(outputFilePath, JSON.stringify(translate, null, 2));
 
